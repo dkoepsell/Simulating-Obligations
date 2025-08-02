@@ -45,6 +45,13 @@ let enableNonReciprocalTargeting = TOGGLES.enableNonReciprocalTargeting;
 let enableTrustHeatmap = TOGGLES.showTrustHeatmap;
 let enableAgentTrails = TOGGLES.showAgentTrails;
 
+// Additional visual layers for emerging affiliation groups and conflict intensity.
+// These toggles control whether translucent heatmaps are drawn to
+// illustrate group clustering and cross‑group friction.  They are
+// initialised to false but can be enabled via the GUI.
+let enableAffiliationHeatmap = false;
+let enableConflictHeatmap = false;
+
 // Validation mode controls whether the sketch renders the canvas.
 // When true the simulation still updates but visual output is
 // suppressed and only metrics are collected.  This flag is
@@ -65,6 +72,13 @@ let batchIndex = 0;
 // element is consumed sequentially.  The array is built when
 // startBatch() is called.
 let batchRunsSequence = [];
+
+// Accumulators for logs across batch runs.  When running in batch
+// mode, we collect all agent and obligation log entries into these
+// arrays.  At the end of the batch sequence the aggregated logs
+// will be exported as single CSV files instead of one per run.
+let batchAgentLog = [];
+let batchObligationLog = [];
 
 // Map of affiliation labels to colours used for rendering.  When a
 // new group is created at runtime, a random colour is assigned and
@@ -95,6 +109,11 @@ let globalAgentIndex = 0;
 // recreated every frame in draw() so that changes to the agents
 // array are reflected automatically.
 let agentMap = new Map();
+// Set of hostile group pairs.  Each entry is a string "g1|g2" with
+// lexicographically sorted group names.  If a pair is hostile, the
+// obligation generator will avoid creating obligations between these
+// groups.  Updated each generation by updateGroupDynamics().
+let hostilePairs = new Set();
 
 // Control flags
 let running = true;
@@ -149,6 +168,9 @@ window.startBatch = function(runs, generations) {
   const reps = parseInt(runs) || 1;
   batchGenerations = parseInt(generations) || 25;
   batchRunsSequence = [];
+  // Clear batch log accumulators at the start of a new batch run
+  batchAgentLog = [];
+  batchObligationLog = [];
   // Define the toggle combinations for batch cycling.  These combos
   // cover different moral repair and norm emergence settings.  Heatmap
   // and trail toggles are disabled in batch mode to reduce overhead.
@@ -238,10 +260,10 @@ export function setup() {
     createGUI({
     scenarios: SCENARIO_NAMES,
     // Expose an array of toggle names.  Additional toggles for
-    // visual layers (trust heatmap and motion trails) are included to
-    // provide more modifiability.  These labels are used in the
-    // onToggleChange handler below.
-    toggles: ['Moral Repair', 'Directed Norms', 'Vulnerability Targeting', 'Trust Heatmap', 'Trails'],
+    // visual layers (trust heatmap, affiliation heatmap, conflict heatmap
+    // and motion trails) are included to provide more modifiability.
+    // These labels are used in the onToggleChange handler below.
+    toggles: ['Moral Repair', 'Directed Norms', 'Vulnerability Targeting', 'Trust Heatmap', 'Affiliation Heatmap', 'Conflict Heatmap', 'Trails'],
     onScenarioSelect: (type) => {
       scenario = type;
       resetSimulation();
@@ -259,6 +281,12 @@ export function setup() {
           break;
         case 'Trust Heatmap':
           enableTrustHeatmap = !enableTrustHeatmap;
+          break;
+        case 'Affiliation Heatmap':
+          enableAffiliationHeatmap = !enableAffiliationHeatmap;
+          break;
+        case 'Conflict Heatmap':
+          enableConflictHeatmap = !enableConflictHeatmap;
           break;
         case 'Trails':
           enableAgentTrails = !enableAgentTrails;
@@ -468,7 +496,16 @@ export function draw() {
 
   // If paused, show static positions and graphs but do not advance
   if (isPaused) {
+    // Display obligations
     for (const vec of obligationVectors) vec.display();
+    // Draw heatmaps beneath agents when paused for inspection
+    if (enableAffiliationHeatmap) {
+      drawAffiliationHeatmap();
+    }
+    if (enableConflictHeatmap) {
+      drawConflictHeatmap();
+    }
+    // Display agents
     for (const agent of agents) agent.display();
     drawLegend();
     drawDebtConflictGraph();
@@ -479,6 +516,17 @@ export function draw() {
   for (const vec of obligationVectors) {
     vec.enforce({ generation, obligationLog });
     vec.display();
+  }
+  // Draw optional heatmaps before updating agent positions so that
+  // agents remain visible on top of the heatmap layers.  The
+  // affiliation heatmap visualises group clustering, while the
+  // conflict heatmap highlights locations with high inter‑group
+  // friction.
+  if (enableAffiliationHeatmap) {
+    drawAffiliationHeatmap();
+  }
+  if (enableConflictHeatmap) {
+    drawConflictHeatmap();
   }
 
   // Update and draw agents
@@ -612,6 +660,81 @@ function updateScenarios() {
 }
 
 /**
+ * Compute trust relationships between affiliation groups and update
+ * hostile/merge dynamics.  Groups with very low mutual trust are
+ * recorded in the hostilePairs set, which influences obligation
+ * generation.  Groups with high mutual trust may merge into a single
+ * affiliation.  Merges adopt the name and colour of the larger
+ * partner.  Thresholds are heuristic and can be tuned for different
+ * dynamics.
+ */
+function updateGroupDynamics() {
+  // Reset hostile pairs
+  hostilePairs.clear();
+  // Partition agents by affiliation
+  const groupMembers = {};
+  for (const agent of agents) {
+    const g = agent.affiliation;
+    if (!groupMembers[g]) groupMembers[g] = [];
+    groupMembers[g].push(agent);
+  }
+  const groups = Object.keys(groupMembers);
+  // Compute average trust between every pair of groups
+  const mergeThreshold = 3; // average trust above which groups merge
+  const hostileThreshold = 0.5; // below this average trust groups become hostile
+  // Keep track of which groups should merge into which
+  const mergeTargets = {};
+  for (let i = 0; i < groups.length; i++) {
+    for (let j = i + 1; j < groups.length; j++) {
+      const g1 = groups[i];
+      const g2 = groups[j];
+      // Compute average trust from g1 to g2 and g2 to g1
+      let trustSum = 0;
+      let count = 0;
+      for (const a of groupMembers[g1]) {
+        for (const b of groupMembers[g2]) {
+          const trust = a.trustMap.get(b.id) || 0;
+          trustSum += trust;
+          count++;
+        }
+      }
+      for (const a of groupMembers[g2]) {
+        for (const b of groupMembers[g1]) {
+          const trust = a.trustMap.get(b.id) || 0;
+          trustSum += trust;
+          count++;
+        }
+      }
+      const avgTrust = count > 0 ? trustSum / count : 0;
+      // Determine hostile or merge relation
+      if (avgTrust < hostileThreshold) {
+        // Record hostility in symmetric manner
+        const key = [g1, g2].sort().join('|');
+        hostilePairs.add(key);
+      } else if (avgTrust > mergeThreshold) {
+        // Plan to merge the smaller group into the larger one
+        const size1 = groupMembers[g1].length;
+        const size2 = groupMembers[g2].length;
+        if (size1 >= size2) {
+          mergeTargets[g2] = g1;
+        } else {
+          mergeTargets[g1] = g2;
+        }
+      }
+    }
+  }
+  // Perform merges: update agent affiliations, colours and groupColours
+  for (const [from, to] of Object.entries(mergeTargets)) {
+    // Reassign all members of 'from' to 'to'
+    for (const agent of groupMembers[from] || []) {
+      agent.affiliation = to;
+    }
+    // Remove the old colour entry and rely on the new group's colour
+    delete window.groupColors[from];
+  }
+}
+
+/**
  * Apply a scenario and toggle combination for batch mode.  This
  * helper updates the global scenario variable and toggle flags
  * according to the provided configuration object.  Heatmap and
@@ -735,7 +858,12 @@ function generateObligations() {
   const vectorCount = Math.min(agents.length * multiplier, maxVectors);
   for (let i = 0; i < vectorCount; i++) {
     const source = random(agents);
-    const nearby = agents.filter(a => a !== source && p5.Vector.dist(a.pos, source.pos) < proximity);
+    let nearby = agents.filter(a => a !== source && p5.Vector.dist(a.pos, source.pos) < proximity);
+    // Filter out targets from hostile affiliation pairs
+    nearby = nearby.filter(a => {
+      const key = [source.affiliation, a.affiliation].sort().join('|');
+      return !hostilePairs.has(key);
+    });
     if (nearby.length === 0) continue;
     const target = random(nearby);
     const strength = random(0.2, 1.0);
@@ -771,8 +899,8 @@ function evolveGeneration() {
   for (const a of agents) agentMap.set(a.id, a);
 
   generation++;
-  // Log aggregate metrics for the previous generation
-  logGeneration(agents, generation, log);
+  // Create new obligations after reproduction/death; logging will
+  // occur later after agents update conflict/debt for this generation.
   generateObligations();
 
   // First pass: update normative preferences and scenario groups
@@ -792,6 +920,8 @@ function evolveGeneration() {
   updateScenarios();
   // Update affiliations based on trust networks after preferences shift
   updateAffiliations();
+  // Compute group-level trust and handle hostile or merging dynamics
+  updateGroupDynamics();
 
   // Second pass: record biographies, update conflict/debt and log entries
   for (const agent of agents) {
@@ -842,6 +972,12 @@ function evolveGeneration() {
     });
   }
 
+  // After agents update conflict and debt, log aggregate metrics for
+  // this generation.  This ensures that avgDebt and avgConflict
+  // reflect the latest updates rather than the previous
+  // generation's values.
+  logGeneration(agents, generation, log);
+
   // If running in batch mode, check whether this run has reached
   // the configured generation limit.  When the limit is hit, export
   // the logs for this run, increment the batch counter and either
@@ -852,21 +988,44 @@ function evolveGeneration() {
     // Clone logs before they are cleared by resetSimulation()
     const agentLogCopy = agentLog.slice();
     const obligationLogCopy = obligationLog.slice();
-    // Use the explicit scenario from the batch sequence to name the files
-    const currentCfg = batchMode ? batchRunsSequence[batchIndex] : null;
-    const runScenario = currentCfg ? currentCfg.scenario : scenario;
-    const runName = `${runScenario}_run${batchIndex + 1}`;
-    downloadAgentLog(agentLogCopy, runName);
-    downloadObligationLog(obligationLogCopy, runName);
+    // Append these logs to the batch accumulators.  We include
+    // run index and scenario name in each entry so that the
+    // aggregated CSV can be analysed later and replicate can be
+    // distinguished.  Determine the current scenario name from the
+    // batch configuration.
+    const cfg = batchMode ? batchRunsSequence[batchIndex] : { scenario };
+    const runNum = batchIndex + 1;
+    // Enrich agent log rows with run and scenario
+    for (const row of agentLogCopy) {
+      row.run = runNum;
+      row.batchScenario = cfg.scenario;
+    }
+    // Enrich obligation log rows with run and scenario
+    for (const row of obligationLogCopy) {
+      row.run = runNum;
+      row.batchScenario = cfg.scenario;
+    }
+    batchAgentLog.push(...agentLogCopy);
+    batchObligationLog.push(...obligationLogCopy);
     batchIndex++;
     if (batchIndex < batchTotalRuns) {
       // Apply the next scenario and toggle combination before resetting
       applyBatchConfig(batchRunsSequence[batchIndex]);
       resetSimulation();
     } else {
+      // All runs completed: disable batch/validation modes and
+      // export the aggregated logs as single CSV files.  Use a
+      // generic filename for the batch.
       batchMode = false;
       validationMode = false;
       running = false;
+      // Export aggregated logs if any entries were collected
+      if (batchAgentLog.length > 0) {
+        downloadAgentLog(batchAgentLog, 'batch_runs');
+      }
+      if (batchObligationLog.length > 0) {
+        downloadObligationLog(batchObligationLog, 'batch_runs');
+      }
       // When batch mode ends, display an interpretive summary of the final run
       interpretiveSummary = generateInterpretiveSummary(log, agents, scenario);
       summaryPopup?.remove();
@@ -1206,6 +1365,55 @@ function drawTrails() {
       vertex(v.x, v.y);
     }
     endShape();
+  }
+}
+
+/**
+ * Draw a heatmap representing affiliation group densities.  Each
+ * agent contributes a semi‑transparent circle coloured according
+ * to its current affiliation.  Overlapping circles produce a
+ * blended heatmap showing areas dominated by particular groups.
+ */
+function drawAffiliationHeatmap() {
+  noStroke();
+  // Use a fixed radius for all heat circles.  Larger values
+  // produce more continuous regions but may blur small groups.
+  const radius = 80;
+  for (const agent of agents) {
+    const group = agent.affiliation;
+    const col = window.groupColors[group];
+    if (!col) continue;
+    // Copy the colour to adjust alpha without mutating the
+    // original group colour.
+    const c = color(col);
+    // Lower alpha for the heatmap overlay.  Increase slightly
+    // with group size to make larger groups more prominent.
+    fill(red(c), green(c), blue(c), 40);
+    ellipse(agent.pos.x, agent.pos.y, radius, radius);
+  }
+}
+
+/**
+ * Draw a heatmap highlighting inter‑group conflict intensity.  The
+ * colour intensity of each circle scales with the agent's
+ * conflict metric, providing a visual indication of where
+ * cross‑group obligations are failing.  Areas with little
+ * conflict remain faint while hotspots glow red.
+ */
+function drawConflictHeatmap() {
+  noStroke();
+  // Use a fixed radius for conflict circles.  Smaller values
+  // localise conflict regions more precisely.
+  const radius = 60;
+  for (const agent of agents) {
+    const conflict = agent.internalConflict || 0;
+    if (conflict <= 0) continue;
+    // Scale the alpha to the conflict value.  The factor 100
+    // maps typical conflict levels (0–1) to 0–100; adjust as
+    // necessary to tune visibility.
+    const alpha = constrain(conflict * 120, 10, 200);
+    fill(255, 50, 50, alpha);
+    ellipse(agent.pos.x, agent.pos.y, radius, radius);
   }
 }
 

@@ -28,19 +28,43 @@ export function logGeneration(agents, generation, log) {
   let totalExpired = 0;
   let totalRepaired = 0;
 
+  // Compute inter‑group conflict: fraction of cross‑group obligations
+  // that were denied or expired.  Count all relational ledger entries
+  // where the source and target belong to different affiliation groups.
+  let interTotal = 0;
+  let interDenied = 0;
   for (const agent of agents) {
-    totalConflict += agent.internalConflict || 0;
     totalDebt += agent.contradictionDebt || 0;
-    const ledger = Array.from(agent.relationalLedger.values());
+    const ledger = Array.from(agent.relationalLedger.entries());
     totalObligationsIssued += ledger.length;
-    totalFulfilled += ledger.filter(v => v === 'fulfilled').length;
-    totalDenied += ledger.filter(v => v === 'denied').length;
-    totalExpired += ledger.filter(v => v === 'expired').length;
-    totalRepaired += ledger.filter(v => v === 'repaired').length;
+    let fulfilledCount = 0;
+    let deniedCount = 0;
+    let expiredCount = 0;
+    let repairedCount = 0;
+    for (const [targetID, status] of ledger) {
+      if (status === 'fulfilled') fulfilledCount++;
+      if (status === 'denied') deniedCount++;
+      if (status === 'expired') expiredCount++;
+      if (status === 'repaired') repairedCount++;
+      // Determine if this is an inter‑group obligation
+      const target = agents.find(a => a.id === targetID);
+      if (target && agent.affiliation && target.affiliation && agent.affiliation !== target.affiliation) {
+        interTotal++;
+        if (status === 'denied' || status === 'expired') {
+          interDenied++;
+        }
+      }
+    }
+    totalFulfilled += fulfilledCount;
+    totalDenied += deniedCount;
+    totalExpired += expiredCount;
+    totalRepaired += repairedCount;
   }
 
-  const avgConflict = agents.length > 0 ? totalConflict / agents.length : 0;
+  // Average debt per agent
   const avgDebt = agents.length > 0 ? totalDebt / agents.length : 0;
+  // Inter‑group conflict is defined as the ratio of denied/expired cross‑group obligations
+  const avgConflict = interTotal > 0 ? interDenied / interTotal : 0;
   const fulfillmentRate = totalObligationsIssued > 0 ? totalFulfilled / totalObligationsIssued : 0;
   const avgRI = (totalFulfilled + totalDenied + totalExpired) > 0
     ? totalFulfilled / (totalFulfilled + totalDenied + totalExpired)
@@ -121,7 +145,7 @@ export function generateInterpretiveSummary(log, agents, scenario) {
     - Fulfillment Rate: ${fulfillment.toFixed(2)}<br>
     - Relational Integrity: ${latest.avgRI ?? 'n/a'}<br>
     - Contradiction Debt: ${latest.avgDebt ?? 'n/a'}<br>
-    - Internal Conflict: ${latest.avgConflict ?? 'n/a'}<br>
+    - Intergroup Conflict: ${latest.avgConflict ?? 'n/a'}<br>
     - Repair Events: ${repairEvents}<br>
     - Avg Trust Connections: ${avgTrustSize}<br><br>
     <strong>📚 Norm Acknowledgment:</strong><br>
@@ -140,9 +164,21 @@ export function generateInterpretiveSummary(log, agents, scenario) {
  * @param {string} scenario The scenario name used to form the filename
  */
 export async function downloadAgentLog(agentLog, scenario) {
-  let csv = 'Generation,Scenario,ID,NormPref,A Priori,Legal,Care,Epistemic,Attempts,Successes,Conflict,Debt,Momentum,TrustCount,TrustMax,Fulfilled,Denied,Expired,Repaired,Role,Temperament,MoralStance,ScenarioGroup,MemoryLength,Affiliation\n';
+  // Determine if the log entries include batch run metadata.  If
+  // present, include Run and BatchScenario columns in the CSV.  We
+  // detect this by checking the first entry for the 'run' property.
+  const includeBatch = agentLog.length > 0 && Object.prototype.hasOwnProperty.call(agentLog[0], 'run');
+  let header = 'Generation,Scenario,ID,NormPref,A Priori,Legal,Care,Epistemic,Attempts,Successes,Conflict,Debt,Momentum,TrustCount,TrustMax,Fulfilled,Denied,Expired,Repaired,Role,Temperament,MoralStance,ScenarioGroup,MemoryLength,Affiliation';
+  if (includeBatch) {
+    header += ',Run,BatchScenario';
+  }
+  let csv = header + '\n';
   for (const row of agentLog) {
-    csv += `${row.generation},${row.scenario},${row.id},${row.normPref},${row.aprioriAck},${row.legalAck},${row.careAck},${row.epistemicAck},${row.attempts},${row.successes},${row.conflict},${row.debt},${row.momentum},${row.trustCount},${row.trustMax},${row.fulfilled},${row.denied},${row.expired},${row.repaired},${row.role},${row.temperament},${row.moralStance},${row.scenarioGroup},${row.memoryLength},${row.affiliation}\n`;
+    let line = `${row.generation},${row.scenario},${row.id},${row.normPref},${row.aprioriAck},${row.legalAck},${row.careAck},${row.epistemicAck},${row.attempts},${row.successes},${row.conflict},${row.debt},${row.momentum},${row.trustCount},${row.trustMax},${row.fulfilled},${row.denied},${row.expired},${row.repaired},${row.role},${row.temperament},${row.moralStance},${row.scenarioGroup},${row.memoryLength},${row.affiliation}`;
+    if (includeBatch) {
+      line += `,${row.run},${row.batchScenario}`;
+    }
+    csv += line + '\n';
   }
   const fileName = `agentLog_${scenario}.csv`;
   // Try to use the File System Access API so the user can choose a location
@@ -184,9 +220,21 @@ export async function downloadAgentLog(agentLog, scenario) {
  * @param {string} scenario The scenario name used to form the filename
  */
 export async function downloadObligationLog(obligationLog, scenario) {
-  let csv = 'Generation,From,To,NormType,Status\n';
+  // Include batch metadata if present.  Determine by inspecting the
+  // first entry for a 'run' property.  If present, add Run and
+  // BatchScenario columns.
+  const includeBatch = obligationLog.length > 0 && Object.prototype.hasOwnProperty.call(obligationLog[0], 'run');
+  let header = 'Generation,From,To,NormType,Status';
+  if (includeBatch) {
+    header += ',Run,BatchScenario';
+  }
+  let csv = header + '\n';
   for (const entry of obligationLog) {
-    csv += `${entry.generation},${entry.from},${entry.to},${entry.norm},${entry.status}\n`;
+    let line = `${entry.generation},${entry.from},${entry.to},${entry.norm},${entry.status}`;
+    if (includeBatch) {
+      line += `,${entry.run},${entry.batchScenario}`;
+    }
+    csv += line + '\n';
   }
   const fileName = `obligationLog_${scenario}.csv`;
   // Try to save via File System Access API
