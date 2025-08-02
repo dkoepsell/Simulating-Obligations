@@ -1,25 +1,18 @@
-Agent‑Relational Simulation Testbed
-This repository contains a modular, configurable testbed for exploring the dynamics of ethical obligation, trust, and social order, inspired by the ontological approach laid out in The Geometry of the Good. Agents in this simulation occupy a shared space, emit and receive directed obligations, adjust trust, reproduce and die, and form emergent alliances and regimes. By tweaking parameters or writing your own norm modules, you can investigate how different normative structures and repair mechanisms influence the stability or collapse of moral communities.
+# Agent‑Relational Simulation Testbed
 
-Quick start
-Install dependencies (optional). All code is pure JavaScript running in the browser via p5.js
-, so there are no Node dependencies required for runtime. If you want to build or lint the code, run npm install.
+This repository contains a modular, configurable testbed for exploring the dynamics of ethical obligation, trust, and social order, inspired by the ontological approach laid out in *The Geometry of the Good*.  Agents in this simulation occupy a shared space, emit and receive directed obligations, adjust trust, reproduce and die, and form emergent alliances and regimes.  By tweaking parameters or writing your own norm modules, you can investigate how different normative structures and repair mechanisms influence the stability or collapse of moral communities.
 
-Serve the project over HTTP. Modern browsers block ES‑module imports from file:// URLs. Start a simple server in the project root:
+## Quick start
 
-bash
-Copy
-Edit
-python -m http.server 8000
+1. **Install dependencies** (optional).  All code is pure JavaScript running in the browser via [p5.js](https://p5js.org/), so there are no Node dependencies required for runtime.  If you want to build or lint the code, run `npm install`.
+2. **Serve the project over HTTP.**  Modern browsers block ES‑module imports from `file://` URLs.  Start a simple server in the project root:
+
+   ```bash
+   python -m http.server 8000
 Then open http://localhost:8000/index.html
  in your browser.
+3. Interact with the GUI. The simulation appears on the left; control and analysis tools appear below. From here you can select scenarios, toggle experimental features, adjust dozens of parameters, run headless batches, or download logs. Hover over any control for a tooltip.
 
-Interact with the GUI. The simulation appears on the left; control and analysis tools appear below. From here you can select scenarios, toggle experimental features, adjust dozens of parameters, run headless batches, or download logs. Hover over any control for a tooltip.
-
-File structure
-pgsql
-Copy
-Edit
 ├─ index.html                # Entry point loading p5.js and the modular simulation
 ├─ README.md                 # This guide
 └─ sim/
@@ -33,7 +26,9 @@ Edit
    └─ examples/
       ├─ sample_config.json  # Example parameter file for batch runs
       └─ README.md           # Explains how to load sample configs
-index.html
+
+
+
 Loads p5.js from a CDN and imports ./sim/sketch.js as an ES module. The <div id="sketch-holder"> element hosts the canvas; the GUI is appended dynamically below this element. For development, you can adjust the <meta> tags or add a favicon here.
 
 sim/config.js
