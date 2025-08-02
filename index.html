@@ -1,36 +1,33 @@
-
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Obligation Simulation</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #f0f0f0;
-    }
-    #sketch-holder {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex-direction: column;
-      padding-top: 10px;
-    }
-    #guiPanel {
-      margin-top: 10px;
-    }
-  </style>
-</head>
-<body>
-  <div id="sketch-holder"></div>
-
-  <!-- p5.js CDN -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/addons/p5.dom.min.js"></script>
-
-  <!-- Sketch JS -->
-  <script src="sketch.js"></script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <title>Agent–Obligation Simulation</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        background-color: #fafafa;
+      }
+      #sketch-holder {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #summary-popup {
+        /* The summary popup styles are applied dynamically in the sketch */
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The canvas created by p5.js will be inserted into this container -->
+    <div id="sketch-holder"></div>
+    <!-- Load p5.js from a CDN.  If you host p5.js locally adjust the src accordingly. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.js"></script>
+    <!-- Entry point for the modular simulation.  Using type="module" allows the script
+         to import other ES modules defined in the sim/ directory. -->
+    <script type="module" src="./sim/sketch.js"></script>
+  </body>
 </html>
