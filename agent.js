@@ -183,6 +183,12 @@ export class Agent {
     }
   }
 
+incrementContradictionDebt(reason = "unspecified") {    
+  this.contradictionDebt++;
+  
+}
+
+
   /**
    * Apply an alignment force to match the average velocity of nearby
    * agents.  Agents within the alignment radius influence the agent
@@ -231,6 +237,8 @@ export class Agent {
     }
   }
 
+
+
   /**
    * Update the internal conflict and contradiction debt by scanning
    * the relational ledger.  Denied obligations contribute to
@@ -240,18 +248,14 @@ export class Agent {
     let conflict = 0;
     let debt = 0;
     for (const status of this.relationalLedger.values()) {
-      if (status === 'denied') {
-        conflict++;
-        // Treat denied obligations as contributing to contradiction debt
-        // because denials also create unresolved obligations.  This
-        // adjustment allows the debt graph to reflect moral tension
-        // even when obligations are immediately denied.
-        debt++;
-      }
-      if (status === 'expired') {
-        debt++;
-      }
-    }
+  if (status === 'denied' || status === 'expired') {
+    debt++;
+  }
+  if (status === 'denied') {
+    conflict++;
+  }
+}
+
     this.internalConflict = conflict;
     this.contradictionDebt = debt;
   }

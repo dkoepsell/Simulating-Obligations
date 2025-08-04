@@ -532,6 +532,7 @@ export function draw() {
   // Update and draw agents
   for (const agent of agents) {
     agent.update();
+agent.updateConflictAndDebt();
     agent.display();
   }
 
@@ -893,6 +894,9 @@ function evolveGeneration() {
     }
     return true;
   });
+for (const agent of agents) {
+  agent.updateConflictAndDebt();
+}
 
   // Update agent map after removing dead agents
   agentMap.clear();
@@ -1146,14 +1150,15 @@ function drawLabels() {
   metrics.push(`Groups: ${groupStrings}`);
   if (log.length > 0) {
     const latest = log[log.length - 1];
-    metrics.push(
-      `Fulfillment Rate: ${latest.fulfillmentRate?.toFixed(2)}`,
-      `Relational Integrity: ${latest.avgRI?.toFixed(2)}`,
-      `Contradiction Debt: ${latest.avgDebt?.toFixed(2)}`,
-      `Internal Conflict: ${latest.avgConflict?.toFixed(2)}`,
-      `Repair Events: ${latest.repairEvents}`,
-      `Emergent Norms: ${latest.emergentNorms}`
-    );
+  metrics.push(
+  `Fulfillment Rate: ${latest.fulfillmentRate?.toFixed(2)}`,
+  `Relational Integrity: ${latest.avgRI?.toFixed(2)}`,
+  `Contradiction Debt (Denied+Expired): ${latest.avgDebt?.toFixed(2)}`,
+  `Internal Conflict: ${latest.avgConflict?.toFixed(2)}`,
+  `Repair Events: ${latest.repairEvents}`,
+  `Emergent Norms: ${latest.emergentNorms}`
+);
+
   }
   for (const line of metrics) {
     text(line, x, y);
