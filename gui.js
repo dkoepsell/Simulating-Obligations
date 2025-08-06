@@ -94,6 +94,8 @@ export function createGUI({
         'Directed Norms': 'Allow obligations to be directed based on agents\' norm preferences.',
         'Vulnerability Targeting': 'Permit obligations to target the most vulnerable agent first.',
         'Trust Heatmap': 'Show or hide the trust intensity heatmap overlay.',
+        'Affiliation Heatmap': 'Show or hide a heatmap indicating the density of affiliation groups.',
+        'Conflict Heatmap': 'Show or hide a heatmap highlighting regions of high inter‑group conflict.',
         'Trails': 'Show or hide motion trails behind agents.'
       };
       toggleBtn.attribute('title', toggleDescriptions[toggleName] || 'Toggle this behaviour');

@@ -174,11 +174,17 @@ window.startBatch = function(runs, generations) {
   // Define the toggle combinations for batch cycling.  These combos
   // cover different moral repair and norm emergence settings.  Heatmap
   // and trail toggles are disabled in batch mode to reduce overhead.
-  const combos = [
-    { enableMoralRepair: true, enableDirectedEmergence: false, enableNonReciprocalTargeting: false },
-    { enableMoralRepair: false, enableDirectedEmergence: true, enableNonReciprocalTargeting: false },
-    { enableMoralRepair: true, enableDirectedEmergence: true, enableNonReciprocalTargeting: true }
-  ];
+ const combos = [
+  { enableMoralRepair: false, enableDirectedEmergence: false, enableNonReciprocalTargeting: false },
+  { enableMoralRepair: true,  enableDirectedEmergence: false, enableNonReciprocalTargeting: false },
+  { enableMoralRepair: false, enableDirectedEmergence: true,  enableNonReciprocalTargeting: false },
+  { enableMoralRepair: false, enableDirectedEmergence: false, enableNonReciprocalTargeting: true },
+  { enableMoralRepair: true,  enableDirectedEmergence: true,  enableNonReciprocalTargeting: false },
+  { enableMoralRepair: true,  enableDirectedEmergence: false, enableNonReciprocalTargeting: true },
+  { enableMoralRepair: false, enableDirectedEmergence: true,  enableNonReciprocalTargeting: true },
+  { enableMoralRepair: true,  enableDirectedEmergence: true,  enableNonReciprocalTargeting: true }
+];
+
   // Build the batch run sequence by iterating over all scenarios and
   // toggle combos.  Each combination is repeated the specified
   // number of times.
@@ -972,7 +978,11 @@ for (const agent of agents) {
       scenarioGroup: agent.scenarioGroup,
       memoryLength: agent.memoryLength,
       // Include the agent's current affiliation to track emergent group
-      affiliation: agent.affiliation
+      affiliation: agent.affiliation,
+  enableMoralRepair,
+    enableDirectedEmergence,
+    enableNonReciprocalTargeting,
+    batchRun: batchIndex + 1
     });
   }
 
@@ -1184,24 +1194,31 @@ function drawLabels() {
  */
 function drawLegend() {
   const legendX = width - 190;
-  const legendY = height - 250;
+  const lineHeight = 18;
+  const numAgentLines = normTypes.length + 2;
+  const numObligationLines = normTypes.length + 6;
+  const totalLines = numAgentLines + numObligationLines + 3;
+  const legendH = totalLines * lineHeight + 24;
+  const legendY = height - legendH - 20;
   const legendW = 170;
-  const legendH = 270;
+
   fill(255);
   stroke(180);
   rect(legendX, legendY, legendW, legendH, 6);
+
   fill(0);
   textSize(12);
   textAlign(LEFT, TOP);
   text('Legend:', legendX + 8, legendY + 5);
   let y = legendY + 20;
-  // Agent fill legend: build dynamic entries for each norm in the system.
+
+  // Agent fill legend
   const dynamicAgentColours = normTypes.map(norm => {
     const label = `${norm.charAt(0).toUpperCase() + norm.slice(1)} (preferred)`;
     return [label, getNormColor(norm, true)];
   });
-  // Append a generic entry for agents that do not acknowledge a norm.
   dynamicAgentColours.push(['Not Acknowledged', getNormColor(normTypes[0] || 'legal', false)]);
+
   text('Agent Fill:', legendX + 8, y);
   y += 16;
   for (const [label, col] of dynamicAgentColours) {
@@ -1213,16 +1230,19 @@ function drawLegend() {
     text(label, legendX + 32, y);
     y += 18;
   }
+
   y += 8;
-  // Obligation lines: dynamic entries for each norm type followed by status lines.
+
+  // Obligation line legend
   const dynamicObligationItems = normTypes.map(norm => {
     const normLabel = `${norm.charAt(0).toUpperCase() + norm.slice(1)}`;
     return [normLabel, color(...(COLORS.norms[norm] || [120, 120, 120]))];
   });
-  // Status line definitions remain static
+
   dynamicObligationItems.push(['Fulfilled', null, COLORS.obligations.fulfilledWeight]);
   dynamicObligationItems.push(['Denied', null, COLORS.obligations.unfulfilledWeight, COLORS.obligations.dashDenied]);
   dynamicObligationItems.push(['Expired', null, COLORS.obligations.unfulfilledWeight, COLORS.obligations.dashExpired]);
+
   text('Obligations:', legendX + 8, y);
   y += 16;
   for (const [label, col, weight = COLORS.obligations.unfulfilledWeight, dash = []] of dynamicObligationItems) {
@@ -1238,6 +1258,7 @@ function drawLegend() {
     y += 16;
   }
 }
+
 
 /**
  * Draw horizontal bar charts showing the fraction of agents

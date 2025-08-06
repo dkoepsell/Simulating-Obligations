@@ -167,21 +167,48 @@ export function generateInterpretiveSummary(log, agents, scenario) {
  * @param {string} scenario The scenario name used to form the filename
  */
 export async function downloadAgentLog(agentLog, scenario) {
-  // Determine if the log entries include batch run metadata.  If
-  // present, include Run and BatchScenario columns in the CSV.  We
-  // detect this by checking the first entry for the 'run' property.
-  const includeBatch = agentLog.length > 0 && Object.prototype.hasOwnProperty.call(agentLog[0], 'run');
-  let header = 'Generation,Scenario,ID,NormPref,A Priori,Legal,Care,Epistemic,Attempts,Successes,Conflict,Debt,Momentum,TrustCount,TrustMax,Fulfilled,Denied,Expired,Repaired,Role,Temperament,MoralStance,ScenarioGroup,MemoryLength,Affiliation';
-  if (includeBatch) {
-    header += ',Run,BatchScenario';
-  }
-  let csv = header + '\n';
+  // Always use a fixed, full header to guarantee columns in all cases
+  let header = [
+    "generation","scenario","id","normPref","aprioriAck","legalAck","careAck","epistemicAck",
+    "attempts","successes","conflict","debt","momentum","trustCount","trustMax",
+    "fulfilled","denied","expired","repaired","role","temperament","moralStance",
+    "scenarioGroup","memoryLength","affiliation",
+    "enableMoralRepair","enableDirectedEmergence","enableNonReciprocalTargeting","batchRun"
+  ].join(",") + "\n";
+
+  let csv = header;
   for (const row of agentLog) {
-    let line = `${row.generation},${row.scenario},${row.id},${row.normPref},${row.aprioriAck},${row.legalAck},${row.careAck},${row.epistemicAck},${row.attempts},${row.successes},${row.conflict},${row.debt},${row.momentum},${row.trustCount},${row.trustMax},${row.fulfilled},${row.denied},${row.expired},${row.repaired},${row.role},${row.temperament},${row.moralStance},${row.scenarioGroup},${row.memoryLength},${row.affiliation}`;
-    if (includeBatch) {
-      line += `,${row.run},${row.batchScenario}`;
-    }
-    csv += line + '\n';
+    csv += [
+      row.generation,
+      row.scenario,
+      row.id,
+      row.normPref,
+      row.aprioriAck,
+      row.legalAck,
+      row.careAck,
+      row.epistemicAck,
+      row.attempts,
+      row.successes,
+      row.conflict,
+      row.debt,
+      row.momentum,
+      row.trustCount,
+      row.trustMax,
+      row.fulfilled,
+      row.denied,
+      row.expired,
+      row.repaired,
+      row.role,
+      row.temperament,
+      row.moralStance,
+      row.scenarioGroup,
+      row.memoryLength,
+      row.affiliation,
+      row.enableMoralRepair,
+      row.enableDirectedEmergence,
+      row.enableNonReciprocalTargeting,
+      row.batchRun
+    ].join(",") + "\n";
   }
   const fileName = `agentLog_${scenario}.csv`;
   // Try to use the File System Access API so the user can choose a location

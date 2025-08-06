@@ -10,24 +10,56 @@
         font-family: Arial, sans-serif;
         background-color: #fafafa;
       }
+
       #sketch-holder {
         position: relative;
         width: 100vw;
         height: 100vh;
         overflow: hidden;
       }
+
+      #scroll-hint {
+        position: absolute;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(255, 255, 255, 0.9);
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 14px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        z-index: 999;
+        animation: bounce 1.5s infinite;
+      }
+
+      @keyframes bounce {
+        0%, 100% { transform: translateX(-50%) translateY(0); }
+        50% { transform: translateX(-50%) translateY(6px); }
+      }
+
       #summary-popup {
         /* The summary popup styles are applied dynamically in the sketch */
       }
     </style>
+    <script>
+      function scrollToBottom() {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }
+    </script>
   </head>
+
   <body>
     <!-- The canvas created by p5.js will be inserted into this container -->
     <div id="sketch-holder"></div>
-    <!-- Load p5.js from a CDN.  If you host p5.js locally adjust the src accordingly. -->
+
+    <!-- 🔽 Scroll hint (moved here from <style>) -->
+    <div id="scroll-hint" onclick="scrollToBottom()">⬇ Scroll for options ⬇</div>
+
+    <!-- Load p5.js from a CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.js"></script>
-    <!-- Entry point for the modular simulation.  Using type="module" allows the script
-         to import other ES modules defined in the sim/ directory. -->
+    <!-- Entry point for the modular simulation -->
     <script type="module" src="./sim/sketch.js"></script>
   </body>
 </html>
