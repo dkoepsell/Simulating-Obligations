@@ -20,6 +20,7 @@ import { normTypes } from './config.js';
  * @returns {Object} The metrics object appended to the log
  */
 export function logGeneration(agents, generation, log) {
+  const idToAffil = new Map(agents.map(a => [a.id, a.affiliation || null]));
   let totalConflict = 0;
   let totalDebt = 0;
   let totalObligationsIssued = 0;
@@ -47,8 +48,8 @@ export function logGeneration(agents, generation, log) {
     if (status === 'expired') expiredCount++;
     if (status === 'repaired') repairedCount++;
     // Intergroup logic...
-    const target = agents.find(a => a.id === targetID);
-    if (target && agent.affiliation && target.affiliation && agent.affiliation !== target.affiliation) {
+    const targetAffil = idToAffil.get(targetID);
+    if (targetAffil && agent.affiliation && agent.affiliation !== targetAffil) {
       interTotal++;
       if (status === 'denied' || status === 'expired') {
         interDenied++;

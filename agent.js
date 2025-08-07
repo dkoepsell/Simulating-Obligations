@@ -164,11 +164,11 @@ export class Agent {
    * within the cohesion radius pull this agent gently toward their
    * average position.
    */
-  applyCohesionForce() {
+  applyCohesionForce(neighbors = window.agents) {
     const { cohesion } = SIM_CONFIG.forceParams;
     let count = 0;
     const centre = createVector();
-    for (const other of window.agents) {
+    for (const other of neighbors) {
       const d = p5.Vector.dist(this.pos, other.pos);
       if (other !== this && d < 60) {
         centre.add(other.pos);
@@ -194,11 +194,11 @@ incrementContradictionDebt(reason = "unspecified") {
    * agents.  Agents within the alignment radius influence the agent
    * proportionally.
    */
-  applyAlignmentForce() {
+  applyAlignmentForce(neighbors = window.agents) {
     const { alignment } = SIM_CONFIG.forceParams;
     let count = 0;
     const avgVel = createVector();
-    for (const other of window.agents) {
+    for (const other of neighbors) {
       const d = p5.Vector.dist(this.pos, other.pos);
       if (other !== this && d < 60) {
         avgVel.add(other.vel);
@@ -216,11 +216,11 @@ incrementContradictionDebt(reason = "unspecified") {
    * Apply a separation force to avoid crowding.  Nearby agents push
    * this agent away based on inverse distance weighting.
    */
-  applySeparationForce() {
+  applySeparationForce(neighbors = window.agents) {
     const { separation } = SIM_CONFIG.forceParams;
     let count = 0;
     const steer = createVector();
-    for (const other of window.agents) {
+    for (const other of neighbors) {
       const d = p5.Vector.dist(this.pos, other.pos);
       if (other !== this && d < 24) {
         const diff = p5.Vector.sub(this.pos, other.pos);
@@ -292,7 +292,7 @@ incrementContradictionDebt(reason = "unspecified") {
    * forces and wander combine to produce a smooth trajectory.  The
    * colour gradually interpolates toward the current norm colour.
    */
-  update() {
+  update(neighbors = window.agents) {
     // Trust attraction toward peers with high trust scores
     let moved = false;
     for (const [id, score] of this.trustMap.entries()) {
@@ -307,9 +307,9 @@ incrementContradictionDebt(reason = "unspecified") {
     }
 
     // Apply flocking forces
-    this.applySeparationForce();
-    this.applyCohesionForce();
-    this.applyAlignmentForce();
+    this.applySeparationForce(neighbors = window.agents);
+    this.applyCohesionForce(neighbors = window.agents);
+    this.applyAlignmentForce(neighbors = window.agents);
 
     // If no trust-directed movement occurred then wander slowly
     if (!moved) {

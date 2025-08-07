@@ -209,6 +209,21 @@ export function createGUI({
     .style('border', '1px solid #ddd')
     .style('border-radius', '6px');
   advToggle.mousePressed(() => {
+
+  // Seed for reproducible randomness
+  const seedRow = createDiv().parent(advancedPanel).style('margin: 6px 0');
+  createSpan('Random Seed: ').parent(seedRow);
+  const seedInput = createInput('').parent(seedRow).style('width','120px');
+  const seedApply = createButton('Apply').parent(seedRow).style('margin-left','6px');
+  const seedClear = createButton('Randomize').parent(seedRow).style('margin-left','4px');
+  seedApply.mousePressed(() => {
+    options.onAdvancedChange && options.onAdvancedChange({ seed: seedInput.value() });
+  });
+  seedClear.mousePressed(() => {
+    seedInput.value('');
+    options.onAdvancedChange && options.onAdvancedChange({ seed: '' });
+  });
+
     const currently = advancedPanel.style('display');
     const expanded = currently === 'none';
     advancedPanel.style('display', expanded ? 'block' : 'none');
