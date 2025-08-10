@@ -1,179 +1,105 @@
 // agent.js
 //
 // Contains the Agent and ObligationVector classes which embody the
-// behavioural logic of the simulation.  Each agent moves according to
-// simple flocking rules and forms or fulfils obligations to other
-// agents.  The ObligationVector class mediates interactions between
-// agents and records the outcome of those interactions.
+// behavioural logic of the simulation. Each agent moves according to
+// simple flocking rules and forms or fulfils obligations to other agents.
+// The ObligationVector class mediates interactions between agents and
+// records the outcome of those interactions.
 
-import { SIM_CONFIG, COLORS, normTypes } from './config.js';
+import { SIM_CONFIG, COLORS, normTypes, VISUALS } from './config.js';
 import { normRegistry, defaultEnforce } from './norms.js';
 
 /**
- * Convert a norm type and acknowledgment flag into a p5 colour.  The
- * colours for each norm are defined in the global CONFIG module.  If
- * the norm is not acknowledged the alpha channel is reduced to the
- * configured noAckAlpha to visually fade the agent.
- *
- * @param {string} norm The name of the norm (must exist in COLORS.norms)
- * @param {boolean} acknowledged Whether the agent recognises the norm
- * @returns {p5.Color} A p5 colour object
+ * Convert a norm type and acknowledgment flag into a p5 colour.
  */
 export function getNormColor(norm, acknowledged) {
   const rgb = COLORS.norms[norm] || [120, 120, 120];
   const alpha = acknowledged ? COLORS.agent.baseAlpha : COLORS.agent.noAckAlpha;
-  // p5.js's colour() function is globally available once the sketch
-  // starts executing.  Returning the colour directly avoids repeated
-  // construction of identical colour objects.
   return color(rgb[0], rgb[1], rgb[2], alpha);
 }
 
 /**
- * Agent class representing a single autonomous entity in the simulation.
- * Instances manage their own position, velocity and state.  Forces are
- * applied using simple rules based on nearby agents and trust values.
+ * Agent class
  */
 export class Agent {
-  /**
-   * Create a new Agent.
-   *
-   * @param {number} id A unique identifier for the agent
-   */
   constructor(id) {
     this.id = id;
 
-    // Extract margins for positioning from the configuration
     const { left, right, top, bottom } = SIM_CONFIG.margins;
-
-    // Initialise spatial vectors.  Agents start at a random position
-    // within the margins and with zero velocity.
-    this.pos = createVector(
-      random(left, width - right),
-      random(top, height - bottom)
-    );
+    this.pos = createVector(random(left, width - right), random(top, height - bottom));
     this.vel = createVector();
     this.acc = createVector();
 
-    // Radius for drawing; vulnerability influences behavioural
-    // responses (unused in the current logic but retained for
-    // extensibility).  wander introduces a slight random drift.
+    // Legacy radius + smoothed visual radius for expressive rendering
     this.r = 10;
+    this.visualRadius = VISUALS.size.baseRadius;
+
     this.vulnerability = random();
     this.wander = p5.Vector.random2D();
 
-    // Each norm is acknowledged or not and stored as a property
-    // named `${norm}Acknowledges` on the agent.  Initialise them
-    // randomly to ensure diversity at the start of the simulation.
+    // Norm acknowledgments
     normTypes.forEach(norm => {
       this[`${norm}Acknowledges`] = random() > 0.5;
     });
 
-    // The norm preference determines the colour used when drawing the
-    // agent.  Preference is chosen uniformly from the set of norms.
+    // Preference & grouping
     this.normPreference = random(normTypes);
-
-    // The scenario group tracks which emergent scenario the agent
-    // currently belongs to.  Initially it matches the preferred norm
-    // but may diverge as norms evolve and scenarios change.  This
-    // property is used for colouring and logging.
     this.scenarioGroup = this.normPreference;
-
-    // Agents also hold an affiliation label that reflects which
-    // emerging alliance or social group they currently belong to.  By
-    // default this is derived from the norm preference so that
-    // initial alliances mirror normative clusters, but it may change
-    // over time through updateAffiliations() in sketch.js.
     this.affiliation = `pref_${this.normPreference}`;
 
-    // The current colour used for rendering is interpolated toward
-    // getNormColor() on each update to produce smooth transitions when
-    // preferences or acknowledgments change.
-    this.displayColor = getNormColor(this.normPreference, this[`${this.normPreference}Acknowledges`]);
+    // Display color (interpolates over time)
+    this.displayColor = getNormColor(
+      this.normPreference,
+      this[`${this.normPreference}Acknowledges`]
+    );
     this.lastPref = this.normPreference;
 
-    // Maintain a record of previous acknowledgments to generate
-    // falsifiability flags.  The object is keyed by norm name and
-    // updated whenever acknowledgments change.
+    // Track last acks for falsifiability
     this.lastAcknowledgments = {};
     normTypes.forEach(norm => {
       this.lastAcknowledgments[norm] = this[`${norm}Acknowledges`];
     });
 
-    // Trust map stores numerical trust scores keyed by target agent id.
-    // Relational ledger stores the status of obligations issued to other
-    // agents (fulfilled, denied, expired or repaired).
+    // Social state
     this.trustMap = new Map();
     this.relationalLedger = new Map();
 
-    // Counters for obligations attempted and succeeded.  These are
-    // recorded in the agent log and influence reproduction and trust.
+    // Counters
     this.obligationAttempts = 0;
     this.obligationSuccesses = 0;
 
-    // Measures of internal state used in the interpreter and logging.
+    // Internal metrics
     this.contradictionDebt = 0;
     this.internalConflict = 0;
     this.culturalMomentum = random(0.3, 1.0);
 
-    // Assign a role to the agent.  Roles influence how agents
-    // interpret or respond to obligations in future extensions.  The
-    // initial role is chosen uniformly from a fixed set.
+    // Traits
     const roles = ['initiator', 'responder', 'mediator', 'disruptor'];
     this.role = random(roles);
-    // Additional behavioural traits.  Temperament governs how
-    // strongly the agent reacts to conflict, moral stance indicates
-    // whether the agent is more proactive or reactive in making
-    // obligations, and memoryLength controls how long the agent
-    // remembers past interactions (reserved for future decay logic).
     this.temperament = random();
     this.moralStance = random(['reactive', 'proactive']);
     this.memoryLength = random(0.2, 1.0);
 
-    // Keep a history of recent positions for drawing motion trails.
-    // Each entry is a p5.Vector copied from the agent's current
-    // position.  The trail length is capped to avoid unbounded
-    // memory growth.  When the trail exceeds the limit oldest
-    // entries are removed.  See sketch.js drawTrails() for
-    // rendering.
+    // Visual aids
     this.trail = [];
 
-    // Narrative and conflict logs reserved for future work.  Biography
-    // records a per-generation snapshot of key metrics.
+    // Logs / biography
     this.narrativeLog = [];
     this.conflictLog = new Map();
     this.biography = [];
 
-    // The generation in which the agent was created.  Used for
-    // computing age and death rate.
     this.birthGeneration = 0;
   }
 
-  /**
-   * Apply a force to the agent by adding to its acceleration.  All
-   * force generators call this method so that forces accumulate over
-   * the frame.
-   *
-   * @param {p5.Vector} force The force to apply
-   */
-  applyForce(force) {
-    this.acc.add(force);
-  }
+  applyForce(force) { this.acc.add(force); }
 
-  /**
-   * Apply a cohesion force towards the local centre of mass.  Agents
-   * within the cohesion radius pull this agent gently toward their
-   * average position.
-   */
   applyCohesionForce(neighbors = window.agents) {
     const { cohesion } = SIM_CONFIG.forceParams;
     let count = 0;
     const centre = createVector();
     for (const other of neighbors) {
       const d = p5.Vector.dist(this.pos, other.pos);
-      if (other !== this && d < 60) {
-        centre.add(other.pos);
-        count++;
-      }
+      if (other !== this && d < 60) { centre.add(other.pos); count++; }
     }
     if (count > 0) {
       centre.div(count);
@@ -183,27 +109,13 @@ export class Agent {
     }
   }
 
-incrementContradictionDebt(reason = "unspecified") {    
-  this.contradictionDebt++;
-  
-}
-
-
-  /**
-   * Apply an alignment force to match the average velocity of nearby
-   * agents.  Agents within the alignment radius influence the agent
-   * proportionally.
-   */
   applyAlignmentForce(neighbors = window.agents) {
     const { alignment } = SIM_CONFIG.forceParams;
     let count = 0;
     const avgVel = createVector();
     for (const other of neighbors) {
       const d = p5.Vector.dist(this.pos, other.pos);
-      if (other !== this && d < 60) {
-        avgVel.add(other.vel);
-        count++;
-      }
+      if (other !== this && d < 60) { avgVel.add(other.vel); count++; }
     }
     if (count > 0) {
       avgVel.div(count);
@@ -212,10 +124,6 @@ incrementContradictionDebt(reason = "unspecified") {
     }
   }
 
-  /**
-   * Apply a separation force to avoid crowding.  Nearby agents push
-   * this agent away based on inverse distance weighting.
-   */
   applySeparationForce(neighbors = window.agents) {
     const { separation } = SIM_CONFIG.forceParams;
     let count = 0;
@@ -224,8 +132,7 @@ incrementContradictionDebt(reason = "unspecified") {
       const d = p5.Vector.dist(this.pos, other.pos);
       if (other !== this && d < 24) {
         const diff = p5.Vector.sub(this.pos, other.pos);
-        diff.normalize();
-        diff.div(d);
+        diff.normalize(); diff.div(d);
         steer.add(diff);
         count++;
       }
@@ -237,43 +144,24 @@ incrementContradictionDebt(reason = "unspecified") {
     }
   }
 
+  incrementContradictionDebt(reason = "unspecified") { this.contradictionDebt++; }
 
-
-  /**
-   * Update the internal conflict and contradiction debt by scanning
-   * the relational ledger.  Denied obligations contribute to
-   * conflict; expired obligations contribute to debt.
-   */
   updateConflictAndDebt() {
-    let conflict = 0;
-    let debt = 0;
+    let conflict = 0, debt = 0;
     for (const status of this.relationalLedger.values()) {
-  if (status === 'denied' || status === 'expired') {
-    debt++;
-  }
-  if (status === 'denied') {
-    conflict++;
-  }
-}
-
+      if (status === 'denied' || status === 'expired') debt++;
+      if (status === 'denied') conflict++;
+    }
     this.internalConflict = conflict;
     this.contradictionDebt = debt;
   }
 
-  /**
-   * Record a snapshot of the agent's state at the given generation.  This
-   * biography is used for offline analysis and could be exported as
-   * part of a batch run.
-   *
-   * @param {number} generation The current generation number
-   */
   recordBiography(generation) {
     this.biography.push({
       generation,
       normPreference: this.normPreference,
       acknowledgments: normTypes.reduce((acc, n) => {
-        acc[n] = this[`${n}Acknowledges`];
-        return acc;
+        acc[n] = this[`${n}Acknowledges`]; return acc;
       }, {}),
       trustCount: this.trustMap.size,
       trustMax: Math.max(...Array.from(this.trustMap.values()), 0),
@@ -287,37 +175,79 @@ incrementContradictionDebt(reason = "unspecified") {
     });
   }
 
-  /**
-   * Update the agent's motion and colour.  Trust forces, flocking
-   * forces and wander combine to produce a smooth trajectory.  The
-   * colour gradually interpolates toward the current norm colour.
-   */
+  // --- Visual helpers ---
+
+  computeVisualRadius() {
+    const w = VISUALS.size.weights || {};
+    const base = VISUALS.size.baseRadius;
+    const trustCount = this.trustMap?.size || 0;
+    const conflict = this.internalConflict || 0;
+    const debt = this.contradictionDebt || 0;
+    const momentum = this.culturalMomentum || 0;
+
+    let delta =
+      (w.trustCount || 0) * trustCount +
+      (w.conflict   || 0) * conflict   +
+      (w.debt       || 0) * debt       +
+      (w.momentum   || 0) * momentum;
+
+    let target = base + 0.7 * delta;
+    target = constrain(target, VISUALS.size.minRadius, VISUALS.size.maxRadius);
+    this.visualRadius = lerp(this.visualRadius, target, VISUALS.size.easing);
+  }
+
+  drawShape(kind, radius) {
+    switch (kind) {
+      case 'square':
+        rectMode(CENTER);
+        rect(0, 0, radius * 2, radius * 2);
+        break;
+      case 'triangle':
+        triangle(-radius, radius, 0, -radius, radius, radius);
+        break;
+      case 'hex':
+        beginShape();
+        for (let i = 0; i < 6; i++) {
+          const a = (PI / 3) * i;
+          vertex(cos(a) * radius, sin(a) * radius);
+        }
+        endShape(CLOSE);
+        break;
+      case 'circle':
+      default:
+        ellipse(0, 0, radius * 2);
+    }
+  }
+
+  // --- Update / display ---
+
   update(neighbors = window.agents) {
-    // Trust attraction toward peers with high trust scores
+    // Trust-directed movement
     let moved = false;
     for (const [id, score] of this.trustMap.entries()) {
       if (score > 2) {
         const peer = window.agentMap.get(parseInt(id));
         if (peer) {
-          const seek = p5.Vector.sub(peer.pos, this.pos).setMag(SIM_CONFIG.forceParams.trustAttraction * score);
+          const seek = p5.Vector.sub(peer.pos, this.pos)
+            .setMag(SIM_CONFIG.forceParams.trustAttraction * score);
           this.applyForce(seek);
           moved = true;
         }
       }
     }
 
-    // Apply flocking forces
-    this.applySeparationForce(neighbors = window.agents);
-    this.applyCohesionForce(neighbors = window.agents);
-    this.applyAlignmentForce(neighbors = window.agents);
+    // Flocking forces
+    this.applySeparationForce(neighbors);
+    this.applyCohesionForce(neighbors);
+    this.applyAlignmentForce(neighbors);
 
-    // If no trust-directed movement occurred then wander slowly
+    // Wander if idle
     if (!moved) {
       this.wander.rotate(random(-0.1, 0.1));
       this.applyForce(p5.Vector.mult(this.wander, 0.03));
     }
 
-    // Integrate acceleration into velocity and position
+    // Integrate motion
     this.acc.limit(0.2);
     this.vel.add(this.acc);
     this.vel.mult(0.95);
@@ -325,26 +255,15 @@ incrementContradictionDebt(reason = "unspecified") {
     this.pos.add(this.vel);
     this.acc.mult(0.6);
 
-    // Record position into trail for motion visualisation.  Make a
-    // copy so that subsequent updates do not mutate stored vectors.
+    // Trail
     if (Array.isArray(this.trail)) {
       this.trail.push(this.pos.copy());
-      // Limit the trail length to 40 samples.  If the trail exceeds
-      // the limit remove the oldest entry.  This retains recent
-      // motion while preventing unbounded growth.
-      const maxTrailLength = 40;
-      if (this.trail.length > maxTrailLength) {
-        this.trail.shift();
-      }
+      if (this.trail.length > 40) this.trail.shift();
     }
 
-    // Choose a target colour based on the agent's current affiliation
-    // group.  If a group colour has been defined on the window
-    // (populated by sketch.js), use it; otherwise fall back to the
-    // scenarioGroup/normPreference colour.  Acknowledgment controls
-    // the lightness when falling back to norm colours.
+    // Colour interpolation: prefer affiliation color, fallback to norm/scenario
     let targetColour;
-    if (typeof window !== 'undefined' && window.groupColors && window.groupColors[this.affiliation]) {
+    if (window.groupColors && window.groupColors[this.affiliation]) {
       targetColour = window.groupColors[this.affiliation];
     } else {
       const scenarioKey = this.scenarioGroup || this.normPreference;
@@ -354,14 +273,12 @@ incrementContradictionDebt(reason = "unspecified") {
     }
     this.displayColor = lerpColor(this.displayColor, targetColour, 0.05);
 
+    // Dynamic size
+    this.computeVisualRadius();
+
     this.wrapAround();
   }
 
-  /**
-   * Wrap agents around the margins to avoid abrupt reflections.  The
-   * margins define the active area of the simulation; leaving it
-   * reintroduces the agent on the opposite side.
-   */
   wrapAround() {
     const { left, right, top, bottom } = SIM_CONFIG.margins;
     if (this.pos.x < left) this.pos.x = width - right;
@@ -370,20 +287,36 @@ incrementContradictionDebt(reason = "unspecified") {
     if (this.pos.y > height - bottom) this.pos.y = top;
   }
 
-  /**
-   * Draw the agent at its current location.  The id is rendered
-   * underneath the circle for identification purposes.
-   */
   display() {
+    // Optional trust halo
+    if (VISUALS.showTrustHalo) {
+      const trustSum = Array.from(this.trustMap?.values() || []).reduce((a, b) => a + b, 0);
+      const haloAlpha = constrain(map(trustSum, 0, 12, 0, VISUALS.haloMaxAlpha), 0, VISUALS.haloMaxAlpha);
+      noStroke();
+      const c = this.displayColor;
+      push();
+      translate(this.pos.x, this.pos.y);
+      fill(red(c), green(c), blue(c), haloAlpha);
+      ellipse(0, 0, this.visualRadius * 4);
+      pop();
+    }
+
+    const shapeKind = VISUALS.shapesByRole[this.role] || 'circle';
+    const stanceStyle = VISUALS.outlineByStance[this.moralStance] || { weight: 1, alpha: 160 };
+
     fill(this.displayColor);
-    noStroke();
+    stroke(0, stanceStyle.alpha);
+    strokeWeight(stanceStyle.weight);
+
     push();
     translate(this.pos.x, this.pos.y);
-    ellipse(0, 0, this.r * 2);
+    this.drawShape(shapeKind, this.visualRadius);
     pop();
-    // ID text slightly offset below the agent
+
+    // ID label
     push();
-    translate(this.pos.x, this.pos.y + 1);
+    translate(this.pos.x, this.pos.y + this.visualRadius + 6);
+    noStroke();
     fill(0);
     textAlign(CENTER, CENTER);
     textSize(10);
@@ -391,14 +324,6 @@ incrementContradictionDebt(reason = "unspecified") {
     pop();
   }
 
-  /**
-   * Adjust the trust score toward another agent.  Fulfilled obligations
-   * increase trust, failed obligations decrease it.  Trust scores may
-   * become negative but a lower bound is not enforced here.
-   *
-   * @param {number|string} targetID The id of the target agent
-   * @param {boolean} fulfilled Whether the obligation was fulfilled
-   */
   recordTrust(targetID, fulfilled) {
     const current = this.trustMap.get(targetID) || 0;
     const delta = fulfilled ? SIM_CONFIG.trustGrowth.increment : -SIM_CONFIG.trustGrowth.decrement;
@@ -407,79 +332,164 @@ incrementContradictionDebt(reason = "unspecified") {
 }
 
 /**
- * ObligationVector mediates the interaction between two agents.  It
- * applies an attractive force from the source toward the target and
- * logs the outcome when obligations are fulfilled, denied or expire.
+ * ObligationVector class
+ * Represents an obligation from source → target with a norm & strength.
+ * Handles enforcement (status changes) and rendering.
  */
+// Animated, de-synced obligation line with arrival-gated enforcement + fade-out
 export class ObligationVector {
-  /**
-   * Create a new ObligationVector.
-   *
-   * @param {Agent} source The agent issuing the obligation
-   * @param {Agent} target The agent receiving the obligation
-   * @param {number} strength The magnitude of the force
-   * @param {string} normType The normative context for the obligation
-   */
-  constructor(source, target, strength, normType = 'legal') {
+  constructor(source, target, strength, norm) {
     this.source = source;
     this.target = target;
-    this.strength = strength;
-    this.normType = normType;
-    this.fulfilled = false;
+    this.strength = strength;          // 0..1
+    this.norm = norm;                  // one of normTypes
+    this.status = 'pending';           // 'pending' | 'fulfilled' | 'denied' | 'expired' | 'repaired'
     this.age = 0;
-    // Lifespan of an obligation is configured via enforcementRules.
-    const { expirationBase, expirationRandom } = SIM_CONFIG.enforcementRules;
-    this.expiration = expirationBase + floor(random(expirationRandom));
+    this.maxAge =
+      SIM_CONFIG.enforcementRules.expirationBase +
+      floor(random(SIM_CONFIG.enforcementRules.expirationRandom));
+
+    // --- animation ---
+    this.animT = 0; // 0..1, how far the line has grown toward the target
+    const baseSpeed = SIM_CONFIG?.obligation?.animSpeed ?? 0.035;
+    this.animSpeed = baseSpeed * (0.7 + random(0.6)); // slight per-line jitter
+    const jitter = SIM_CONFIG?.obligation?.spawnJitter ?? 24; // frames to stagger births
+    const now = (typeof frameCount === 'number') ? frameCount : 0;
+    this.spawnFrame = now + floor(random(0, jitter)); // don’t all start at once
+
+    this.resolveOnArrival = true; // only decide fulfilled/denied once line reaches target
+    this.resolvedAt = null;       // frameCount when resolved
+    this.lingerFrames = SIM_CONFIG?.obligation?.lingerFrames ?? 18; // fade-out
   }
 
-  /**
-   * Render the obligation as a line between source and target.  Line
-   * style and alpha depend on whether the obligation is fulfilled,
-   * expired or denied.  Colours are derived from the configured
-   * norm palette.
-   */
+  // advance animation even when not rendering (validation/headless)
+  stepAnimation() {
+    if (typeof frameCount === 'number' && frameCount < this.spawnFrame) return;
+    if (this.animT < 1) this.animT = Math.min(1, this.animT + this.animSpeed);
+  }
+
+  // Update state based on the registered norm's enforcement rule (or default)
+  enforce({ generation, obligationLog }) {
+    if (!this.source || !this.target) return;
+
+    // Always age while pending (can expire even before arrival)
+    if (this.status === 'pending') {
+      this.age++;
+      if (this.age > this.maxAge) {
+        this.status = 'expired';
+        this.source.relationalLedger.set(this.target.id, 'expired');
+        this.source.recordTrust(this.target.id, false);
+        this.target.recordTrust(this.source.id, false);
+        obligationLog?.push({ status: 'expired', norm: this.norm, from: this.source.id, to: this.target.id, generation });
+        this.resolvedAt = (typeof frameCount === 'number') ? frameCount : 0;
+        return;
+      }
+    }
+
+    if (this.status !== 'pending') return;
+
+    // keep animation moving even in validation mode
+    this.stepAnimation();
+
+    // Gate resolution until the line visually arrives
+    if (this.resolveOnArrival && this.animT < 1) return;
+
+    // Use norm-specific enforcement, fallback to default
+    const enforceFn = (typeof normRegistry !== 'undefined' && normRegistry[this.norm]?.enforceFn) || defaultEnforce;
+    const result = enforceFn(this, { generation, obligationLog });
+
+    // If custom rule didn’t return a canonical status, use baseline
+    if (!['fulfilled', 'denied', 'pending'].includes(result)) {
+      const d = p5.Vector.dist(this.source.pos, this.target.pos);
+      const proximityOK = d < (SIM_CONFIG.enforcementRules.proximityThreshold || 150);
+      const ackOK = !!(this.source[`${this.norm}Acknowledges`] && this.target[`${this.norm}Acknowledges`]);
+      const p = (this.strength * (proximityOK ? 1.0 : 0.6)) * (ackOK ? 1.0 : 0.5);
+      this.status = (random() < p) ? 'fulfilled' : 'denied';
+    } else {
+      this.status = result;
+    }
+
+    if (this.status === 'fulfilled' || this.status === 'denied') {
+      this.source.obligationAttempts = (this.source.obligationAttempts || 0) + 1;
+      if (this.status === 'fulfilled') {
+        this.source.obligationSuccesses = (this.source.obligationSuccesses || 0) + 1;
+      }
+      this.source.relationalLedger.set(this.target.id, this.status);
+      this.source.recordTrust(this.target.id, this.status === 'fulfilled');
+      this.target.recordTrust(this.source.id, this.status === 'fulfilled');
+      obligationLog?.push({ status: this.status, norm: this.norm, from: this.source.id, to: this.target.id, generation });
+      this.resolvedAt = (typeof frameCount === 'number') ? frameCount : 0;
+    }
+  }
+
+  // Render as an animated line colored by norm & styled by status
   display() {
-    // Use the colour defined in the norm registry; fall back to
-    // grey if undefined.  Alpha depends on fulfilment and status.
-    const entry = normRegistry[this.normType] || {};
-    const baseRGB = entry.color || [120, 120, 120];
-    let alpha = this.fulfilled ? COLORS.obligations.lineAlpha / 2 : COLORS.obligations.lineAlpha * 0.3;
-    // Dash patterns based on expiration or denial
-    if (!this.fulfilled && this.age >= this.expiration) {
-      drawingContext.setLineDash(COLORS.obligations.dashExpired);
-      alpha = COLORS.obligations.lineAlpha * 0.2;
-    } else if (!this.fulfilled && entry && entry.acknowledgeFn && !entry.acknowledgeFn(this.target)) {
-      drawingContext.setLineDash(COLORS.obligations.dashDenied);
-      alpha = COLORS.obligations.lineAlpha * 0.25;
-    } else {
-      drawingContext.setLineDash([]);
-    }
-    stroke(baseRGB[0], baseRGB[1], baseRGB[2], alpha);
-    strokeWeight(this.fulfilled ? COLORS.obligations.fulfilledWeight : COLORS.obligations.unfulfilledWeight);
-    line(this.source.pos.x, this.source.pos.y, this.target.pos.x, this.target.pos.y);
-    drawingContext.setLineDash([]);
-  }
+    if (!this.source || !this.target) return;
 
-  /**
-   * Apply the obligation force and update its status.  If either
-   * party does not acknowledge the norm the obligation is denied.  If
-   * the obligation reaches its expiration without fulfilment it is
-   * recorded as expired.  If the distance between the agents falls
-   * below the proximity threshold the obligation is fulfilled.  All
-   * outcomes are logged to the provided obligationLog.
-   *
-   * @param {Object} state An object carrying simulation state
-   * @param {number} state.generation Current generation number
-   * @param {Array} state.obligationLog Array to receive obligation events
-   */
-  enforce(state) {
-    // Delegate to the registered norm enforcement function.  If no
-    // custom enforce function is provided, use the default logic.
-    const entry = normRegistry[this.normType];
-    if (entry && typeof entry.enforceFn === 'function') {
-      entry.enforceFn(this, state);
-    } else {
-      defaultEnforce(this, state);
+    // advance animation when rendering too
+    this.stepAnimation();
+
+    const rgb = COLORS.norms[this.norm] || [120, 120, 120];
+    const baseAlpha = COLORS.obligations.lineAlpha || 100;
+
+    // core style
+    let weight = COLORS.obligations.unfulfilledWeight || 1.2;
+    let alpha = baseAlpha;
+    let dash = null;
+
+    if (this.status === 'fulfilled') {
+      weight = COLORS.obligations.fulfilledWeight || 2.5;
+      alpha = baseAlpha + 50;
+    } else if (this.status === 'denied') {
+      dash = COLORS.obligations.dashDenied || [8, 4];
+    } else if (this.status === 'expired') {
+      dash = COLORS.obligations.dashExpired || [3, 6];
+      alpha = baseAlpha * 0.7;
     }
+
+    // fade after resolve
+    if (this.resolvedAt != null) {
+      const now = (typeof frameCount === 'number') ? frameCount : 0;
+      const t = (now - this.resolvedAt) / this.lingerFrames;
+      const k = 1 - constrain(t, 0, 1);
+      if (k <= 0) return; // finished showing
+      alpha *= k;
+    }
+
+    const x1 = this.source.pos.x, y1 = this.source.pos.y;
+    const x2 = this.target.pos.x, y2 = this.target.pos.y;
+
+    push();
+    stroke(rgb[0], rgb[1], rgb[2], alpha);
+    strokeWeight(weight);
+    noFill();
+
+    // While pending and not yet arrived, draw only a growing segment
+    if (this.status === 'pending' && this.animT < 1) {
+      const cx = lerp(x1, x2, this.animT);
+      const cy = lerp(y1, y2, this.animT);
+      line(x1, y1, cx, cy);
+      pop();
+      return;
+    }
+
+    // Full-length styles (may be dashed)
+    if (!dash) {
+      line(x1, y1, x2, y2);
+    } else {
+      const on = dash[0], off = dash[1], seg = on + off;
+      const total = dist(x1, y1, x2, y2);
+      const steps = Math.max(1, floor(total / seg));
+      const vx = (x2 - x1) / steps;
+      const vy = (y2 - y1) / steps;
+      for (let i = 0; i < steps; i++) {
+        const sx = x1 + i * vx;
+        const sy = y1 + i * vy;
+        const ex = sx + vx * (on / (on + off));
+        const ey = sy + vy * (on / (on + off));
+        line(sx, sy, ex, ey);
+      }
+    }
+    pop();
   }
 }
