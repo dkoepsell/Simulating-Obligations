@@ -1,65 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Agent–Obligation Simulation</title>
-    <style>
-      body {
-        margin: 0;
-        padding: 0;
-        font-family: Arial, sans-serif;
-        background-color: #fafafa;
-      }
-
-      #sketch-holder {
-        position: relative;
-        width: 100vw;
-        height: 100vh;
-        overflow: hidden;
-      }
-
-      #scroll-hint {
-        position: absolute;
-        bottom: 16px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(255, 255, 255, 0.9);
-        padding: 6px 12px;
-        border-radius: 8px;
-        font-weight: bold;
-        cursor: pointer;
-        font-size: 14px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        z-index: 999;
-        animation: bounce 1.5s infinite;
-      }
-
-      @keyframes bounce {
-        0%, 100% { transform: translateX(-50%) translateY(0); }
-        50% { transform: translateX(-50%) translateY(6px); }
-      }
-
-      #summary-popup {
-        /* The summary popup styles are applied dynamically in the sketch */
-      }
-    </style>
-    <script>
-      function scrollToBottom() {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-      }
-    </script>
-  </head>
-
-  <body>
-    <!-- The canvas created by p5.js will be inserted into this container -->
-    <div id="sketch-holder"></div>
-
-    <!-- 🔽 Scroll hint (moved here from <style>) -->
-    <div id="scroll-hint" onclick="scrollToBottom()">⬇ Scroll for options ⬇</div>
-
-    <!-- Load p5.js from a CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.js"></script>
-    <!-- Entry point for the modular simulation -->
-    <script type="module" src="./sim/sketch.js"></script>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SimEthica – Agent–Obligation Simulation</title>
+  <link rel="icon" href="./sim/favicon.ico" />
+  <style>
+    body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#fafafa;}
+    #branding{background:#222;color:#fff;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1000}
+    #branding h1{margin:0;font-size:20px;font-weight:bold}
+    #branding span{font-size:14px;opacity:.85}
+    #sketch-holder{position:relative;width:100vw;height:calc(100vh - 50px);overflow:hidden}
+    #scroll-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.9);padding:6px 12px;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px;box-shadow:0 2px 4px rgba(0,0,0,.2);z-index:999;animation:bounce 1.5s infinite;user-select:none}
+    @keyframes bounce{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(6px)}}
+  </style>
+  <script>
+    function scrollToBottom(){window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});}
+  </script>
+</head>
+<body>
+  <div id="branding">
+    <h1>SimEthica</h1>
+    <span>© David Koepsell</span>
+  </div>
+  <div id="sketch-holder"></div>
+  <div id="scroll-hint" onclick="scrollToBottom()">⬇︎ Scroll for options ⬇︎</div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+  <!-- Deep Time toggle + UI (vanilla script, no imports) -->
+  <script src="./sim/deep-time.js"></script>
+  <!-- Simulation entry point (ES module) -->
+  <script type="module" src="./sim/sketch.js"></script>
+</body>
 </html>
